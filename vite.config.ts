@@ -12,4 +12,9 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  vite: {
+    // Rutas relativas para que la app pueda cargarse desde file:// dentro de Electron.
+    base: "./",
+  },
 });
+
