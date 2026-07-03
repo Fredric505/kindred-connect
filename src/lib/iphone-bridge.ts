@@ -40,6 +40,7 @@ export type IPhoneBridge = {
   syslogStart: (opts?: { udid?: string }) => Promise<{ ok: true }>;
   syslogStop: (opts?: { udid?: string }) => Promise<{ ok: true }>;
   onSyslog: (fn: (p: SyslogPayload) => void) => () => void;
+  crashReports: (opts?: { udid?: string }) => Promise<{ ok: boolean; error?: string; warning?: string; dir?: string; panics?: CrashReport[]; crashes?: CrashReport[] }>;
   openExternal: (url: string) => Promise<void>;
 };
 
