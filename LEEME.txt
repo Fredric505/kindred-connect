@@ -1,0 +1,14 @@
+iPhone Diagnostics - Instrucciones rapidas
+==========================================
+
+1) Instala Node.js 20+ desde https://nodejs.org
+2) Instala iTunes o "Apple Devices" (para el driver USB del iPhone)
+3) Haz DOBLE CLIC en  build-exe.bat
+4) Espera 3-5 minutos. Al terminar tendras:
+      release\iPhoneDiagnostics-win32-x64\iPhoneDiagnostics.exe
+5) Conecta tu iPhone por USB, acepta "Confiar en este PC"
+   y abre el .exe.
+
+Listo. Diagnostico completo: bateria real, ciclos, temperatura,
+almacenamiento, IMEI, deteccion de piezas no originales, syslog
+en vivo e historial.
