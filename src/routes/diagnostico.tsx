@@ -87,7 +87,30 @@ function DiagnosticoPage() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [syslog, setSyslog] = useState<string[]>([]);
   const [syslogOn, setSyslogOn] = useState(false);
+  const [pairing, setPairing] = useState(false);
+  const [pairMsg, setPairMsg] = useState<string | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  const pair = useCallback(async () => {
+    if (!bridge || !snapshot) return;
+    setPairing(true);
+    setPairMsg(null);
+    try {
+      const r = await bridge.pair({ udid: snapshot.udid });
+      if (r.ok) {
+        setPairMsg("Emparejado correctamente. Reescanea para leer todos los datos.");
+        setTimeout(() => refresh(), 800);
+      } else if (r.needsTrust) {
+        setPairMsg("Desbloquea el iPhone y toca 'Confiar' en el aviso. Luego pulsa 'Emparejar' otra vez.");
+      } else {
+        setPairMsg(r.error || r.message || "No pude emparejar. Verifica que el iPhone esté desbloqueado.");
+      }
+    } catch (e) {
+      setPairMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPairing(false);
+    }
+  }, [bridge, snapshot]);
 
   const refresh = useCallback(async () => {
     if (!bridge) return;
