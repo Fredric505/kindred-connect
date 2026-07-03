@@ -66,7 +66,7 @@ function BatteryTest() {
   }, []);
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-12">
+    <div className="mx-auto max-w-4xl px-5 py-10 sm:px-6 sm:py-14">
       <PageHeader
         eyebrow="Batería y rendimiento"
         title="Batería y rendimiento"
@@ -157,7 +157,7 @@ function BatteryTest() {
       </section>
 
       <BackHome />
-    </main>
+    </div>
   );
 }
 

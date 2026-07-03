@@ -14,7 +14,7 @@ export const Route = createFileRoute("/test/media")({
 
 function MediaTest() {
   return (
-    <main className="mx-auto max-w-4xl px-6 py-12">
+    <div className="mx-auto max-w-4xl px-5 py-10 sm:px-6 sm:py-14">
       <PageHeader
         eyebrow="Audio, cámara y conectividad"
         title="Audio, cámara y conectividad"
@@ -30,7 +30,7 @@ function MediaTest() {
       </div>
 
       <BackHome />
-    </main>
+    </div>
   );
 }
 
