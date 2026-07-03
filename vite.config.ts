@@ -1,20 +1,22 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - tanstackStart, viteReact, tailwindcss, tsConfigPaths, nitro (build-only using cloudflare as a default target),
-//     componentTagger (dev-only), VITE_* env injection, @ path alias, React/TanStack dedupe,
-//     error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
+// @lovable.dev/vite-tanstack-config already includes tanstackStart, viteReact, tailwindcss,
+// tsConfigPaths, nitro (build-only, Cloudflare Worker preset por defecto), etc.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+
+// Cuando construimos para Electron pasamos ELECTRON_BUILD=1 para cambiar el preset de Nitro
+// a node-server (produce dist/server/index.mjs ejecutable con Node dentro de la app).
+const isElectron = process.env.ELECTRON_BUILD === "1";
 
 export default defineConfig({
   tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
     server: { entry: "server" },
   },
+  ...(isElectron
+    ? {
+        nitro: { preset: "node-server" },
+      }
+    : {}),
   vite: {
-    // Rutas relativas para que la app pueda cargarse desde file:// dentro de Electron.
+    // Rutas relativas para cargar assets bajo file:// (fallback) o desde el server local.
     base: "./",
   },
 });
-
