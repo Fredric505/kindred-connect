@@ -345,6 +345,7 @@ function registerIpc(getWin) {
   ipcMain.handle("imd:history-read", (_e, { udid }) => ({ ok: true, entries: (readHistory()[udid] || []) }));
   ipcMain.handle("imd:syslog-start", (_e, { udid } = {}) => startSyslog(getWin(), udid));
   ipcMain.handle("imd:syslog-stop", (_e, { udid } = {}) => stopSyslog(udid));
+  ipcMain.handle("imd:crashreports", (_e, { udid } = {}) => fetchCrashReports(udid));
   ipcMain.handle("imd:open-external", (_e, url) => shell.openExternal(url));
 }
 
