@@ -99,7 +99,28 @@ function DiagnosticoPage() {
   const [syslogOn, setSyslogOn] = useState(false);
   const [pairing, setPairing] = useState(false);
   const [pairMsg, setPairMsg] = useState<string | null>(null);
+  const [panics, setPanics] = useState<CrashReport[]>([]);
+  const [panicMsg, setPanicMsg] = useState<string | null>(null);
+  const [loadingPanics, setLoadingPanics] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  const loadPanics = useCallback(async () => {
+    if (!bridge || !snapshot?.udid) return;
+    setLoadingPanics(true);
+    setPanicMsg(null);
+    try {
+      const r = await bridge.crashReports({ udid: snapshot.udid });
+      if (r.ok) {
+        setPanics(r.panics || []);
+        if ((r.panics || []).length === 0) setPanicMsg("Sin panics registrados en el dispositivo.");
+        if (r.warning) setPanicMsg((prev) => (prev ? prev + " · " : "") + `Aviso: ${r.warning}`);
+      } else {
+        setPanicMsg(r.error || "No se pudieron leer los crash reports.");
+      }
+    } finally {
+      setLoadingPanics(false);
+    }
+  }, [bridge, snapshot?.udid]);
 
   const refresh = useCallback(async () => {
     if (!bridge) return;
