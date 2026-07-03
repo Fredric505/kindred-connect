@@ -362,6 +362,7 @@ function DiagnosticoPage() {
 
           <AuthenticityCard snapshot={snapshot} syslog={syslog} />
           <HistoryCard history={history} />
+          <PanicsCard panics={panics} message={panicMsg} loading={loadingPanics} onLoad={loadPanics} />
           <SyslogCard lines={syslog} on={syslogOn} onToggle={toggleSyslog} onClear={() => setSyslog([])} />
         </div>
       )}
