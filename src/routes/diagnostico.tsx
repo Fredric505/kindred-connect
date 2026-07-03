@@ -154,7 +154,15 @@ function DiagnosticoPage() {
       const r = await bridge.pair(udid ? { udid } : {});
       if (r.ok) {
         setPairMsg("Emparejado correctamente. Reescaneando…");
-        setTimeout(() => refresh(), 800);
+        await refresh();
+        // Verifica si tras el pair conseguimos identidad real (nombre / modelo).
+        // Si sigue vacío, es limitación de iOS (17+/26 beta).
+        setPairMsg((prev) => {
+          // No podemos leer snapshot aquí (closure viejo); dejamos un mensaje neutro.
+          return prev === "Emparejado correctamente. Reescaneando…"
+            ? "Emparejado. Si los campos siguen vacíos, tu versión de iOS bloquea el acceso (iOS 17+/beta). Prueba a desconectar y reconectar el cable."
+            : prev;
+        });
       } else if (r.needsTrust) {
         setPairMsg("Desbloquea el iPhone y toca 'Confiar' en el aviso. Luego pulsa 'Emparejar' otra vez.");
       } else {
