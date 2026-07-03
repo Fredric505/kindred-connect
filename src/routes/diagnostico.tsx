@@ -72,9 +72,12 @@ function fmtBytes(n: unknown) {
 }
 
 function computeBatteryHealth(battery: Record<string, unknown> | null) {
+  // 3uTools / CoconutBattery usan NominalChargeCapacity / DesignCapacity.
+  const design = num(pick(battery, "DesignCapacity"));
+  const nominal = num(pick(battery, "NominalChargeCapacity"));
+  if (design && nominal) return Math.max(0, Math.min(100, Math.round((nominal / design) * 100)));
   const reported = num(pick(battery, "BatteryHealth", "BatteryHealthMetric", "BatteryHealthPercent", "MaximumCapacityPercent"));
   if (reported && reported > 0 && reported <= 100) return Math.round(reported);
-  const design = num(pick(battery, "DesignCapacity"));
   const full = num(pick(battery, "AppleRawMaxCapacity", "FullChargeCapacity", "FullAvailableCapacity", "MaxCapacity"));
   if (!design || !full) return undefined;
   return Math.max(0, Math.min(100, Math.round((full / design) * 100)));
