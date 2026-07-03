@@ -25,6 +25,8 @@ export type HistoryEntry = {
 
 export type SyslogPayload = { udid?: string; line: string; err?: boolean };
 
+export type CrashReport = { file: string; path: string; mtime: number; size: number; head: string };
+
 export type IPhoneBridge = {
   isElectron: true;
   bridgeInfo: () => Promise<BridgeInfo>;
@@ -40,6 +42,7 @@ export type IPhoneBridge = {
   syslogStart: (opts?: { udid?: string }) => Promise<{ ok: true }>;
   syslogStop: (opts?: { udid?: string }) => Promise<{ ok: true }>;
   onSyslog: (fn: (p: SyslogPayload) => void) => () => void;
+  crashReports: (opts?: { udid?: string }) => Promise<{ ok: boolean; error?: string; warning?: string; dir?: string; panics?: CrashReport[]; crashes?: CrashReport[] }>;
   openExternal: (url: string) => Promise<void>;
 };
 

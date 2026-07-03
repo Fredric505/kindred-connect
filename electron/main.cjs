@@ -276,6 +276,43 @@ function stopSyslog(udid) {
   return { ok: true };
 }
 
+// Crash reports / panics — descarga con idevicecrashreport y analiza los archivos.
+async function fetchCrashReports(udid) {
+  const outDir = path.join(app.getPath("userData"), "crashes", udid || "_default");
+  try { fs.mkdirSync(outDir, { recursive: true }); } catch {}
+  const args = ["-e", "-k"];
+  if (udid) args.push("-u", udid);
+  args.push(outDir);
+  const r = await run(binPath("idevicecrashreport"), args, 60000);
+  if (!r.ok && !fs.existsSync(outDir)) return { ok: false, error: r.error || r.stderr };
+  const files = [];
+  const walk = (dir) => {
+    let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else files.push(full);
+    }
+  };
+  walk(outDir);
+  const panics = [];
+  const crashes = [];
+  for (const f of files) {
+    const base = path.basename(f);
+    const stat = (() => { try { return fs.statSync(f); } catch { return null; } })();
+    const mtime = stat ? stat.mtimeMs : 0;
+    let head = "";
+    try { head = fs.readFileSync(f, "utf8").slice(0, 4096); } catch {}
+    const item = { file: base, path: f, mtime, size: stat ? stat.size : 0, head };
+    if (/panic/i.test(base)) panics.push(item);
+    else if (/\.(ips|crash|synced)$/i.test(base)) crashes.push(item);
+  }
+  panics.sort((a, b) => b.mtime - a.mtime);
+  crashes.sort((a, b) => b.mtime - a.mtime);
+  return { ok: true, panics, crashes: crashes.slice(0, 30), dir: outDir, warning: r.ok ? undefined : (r.stderr || r.error) };
+}
+
+
 function registerIpc(getWin) {
   ipcMain.handle("imd:bridge-info", async () => ({
     platform: process.platform, arch: process.arch,
@@ -308,6 +345,7 @@ function registerIpc(getWin) {
   ipcMain.handle("imd:history-read", (_e, { udid }) => ({ ok: true, entries: (readHistory()[udid] || []) }));
   ipcMain.handle("imd:syslog-start", (_e, { udid } = {}) => startSyslog(getWin(), udid));
   ipcMain.handle("imd:syslog-stop", (_e, { udid } = {}) => stopSyslog(udid));
+  ipcMain.handle("imd:crashreports", (_e, { udid } = {}) => fetchCrashReports(udid));
   ipcMain.handle("imd:open-external", (_e, url) => shell.openExternal(url));
 }
 

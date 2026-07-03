@@ -20,5 +20,6 @@ contextBridge.exposeInMainWorld("iphoneBridge", {
   syslogStart: (opts = {}) => ipcRenderer.invoke("imd:syslog-start", opts),
   syslogStop: (opts = {}) => ipcRenderer.invoke("imd:syslog-stop", opts),
   onSyslog: (fn) => { syslogListeners.add(fn); return () => syslogListeners.delete(fn); },
+  crashReports: (opts = {}) => ipcRenderer.invoke("imd:crashreports", opts),
   openExternal: (url) => ipcRenderer.invoke("imd:open-external", url),
 });

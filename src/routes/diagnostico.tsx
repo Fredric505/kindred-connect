@@ -28,7 +28,7 @@ import {
   ResponsiveContainer,
   Tooltip as ReTooltip,
 } from "recharts";
-import { getBridge, type BridgeInfo, type HistoryEntry } from "@/lib/iphone-bridge";
+import { getBridge, type BridgeInfo, type HistoryEntry, type CrashReport } from "@/lib/iphone-bridge";
 import jsPDF from "jspdf";
 
 export const Route = createFileRoute("/diagnostico")({
@@ -72,9 +72,12 @@ function fmtBytes(n: unknown) {
 }
 
 function computeBatteryHealth(battery: Record<string, unknown> | null) {
+  // 3uTools / CoconutBattery usan NominalChargeCapacity / DesignCapacity.
+  const design = num(pick(battery, "DesignCapacity"));
+  const nominal = num(pick(battery, "NominalChargeCapacity"));
+  if (design && nominal) return Math.max(0, Math.min(100, Math.round((nominal / design) * 100)));
   const reported = num(pick(battery, "BatteryHealth", "BatteryHealthMetric", "BatteryHealthPercent", "MaximumCapacityPercent"));
   if (reported && reported > 0 && reported <= 100) return Math.round(reported);
-  const design = num(pick(battery, "DesignCapacity"));
   const full = num(pick(battery, "AppleRawMaxCapacity", "FullChargeCapacity", "FullAvailableCapacity", "MaxCapacity"));
   if (!design || !full) return undefined;
   return Math.max(0, Math.min(100, Math.round((full / design) * 100)));
@@ -96,7 +99,28 @@ function DiagnosticoPage() {
   const [syslogOn, setSyslogOn] = useState(false);
   const [pairing, setPairing] = useState(false);
   const [pairMsg, setPairMsg] = useState<string | null>(null);
+  const [panics, setPanics] = useState<CrashReport[]>([]);
+  const [panicMsg, setPanicMsg] = useState<string | null>(null);
+  const [loadingPanics, setLoadingPanics] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  const loadPanics = useCallback(async () => {
+    if (!bridge || !snapshot?.udid) return;
+    setLoadingPanics(true);
+    setPanicMsg(null);
+    try {
+      const r = await bridge.crashReports({ udid: snapshot.udid });
+      if (r.ok) {
+        setPanics(r.panics || []);
+        if ((r.panics || []).length === 0) setPanicMsg("Sin panics registrados en el dispositivo.");
+        if (r.warning) setPanicMsg((prev) => (prev ? prev + " · " : "") + `Aviso: ${r.warning}`);
+      } else {
+        setPanicMsg(r.error || "No se pudieron leer los crash reports.");
+      }
+    } finally {
+      setLoadingPanics(false);
+    }
+  }, [bridge, snapshot?.udid]);
 
   const refresh = useCallback(async () => {
     if (!bridge) return;
@@ -338,6 +362,7 @@ function DiagnosticoPage() {
 
           <AuthenticityCard snapshot={snapshot} syslog={syslog} />
           <HistoryCard history={history} />
+          <PanicsCard panics={panics} message={panicMsg} loading={loadingPanics} onLoad={loadPanics} />
           <SyslogCard lines={syslog} on={syslogOn} onToggle={toggleSyslog} onClear={() => setSyslog([])} />
         </div>
       )}
@@ -770,6 +795,86 @@ function SyslogCard({ lines, on, onToggle, onClear }: { lines: string[]; on: boo
           ))
         )}
       </div>
+    </section>
+  );
+}
+
+function extractPanicSummary(head: string) {
+  const lines = head.split(/\r?\n/).slice(0, 40);
+  const pick = (re: RegExp) => {
+    for (const l of lines) { const m = l.match(re); if (m) return m[1] || m[0]; }
+    return null;
+  };
+  return {
+    date: pick(/"?timestamp"?\s*[:=]\s*"?([^",\n]+)/i) || pick(/^Date\/Time:\s*(.+)/i),
+    product: pick(/"?product"?\s*[:=]\s*"?([^",\n]+)/i) || pick(/^Hardware Model:\s*(.+)/i),
+    os: pick(/"?os_version"?\s*[:=]\s*"?([^",\n]+)/i) || pick(/^OS Version:\s*(.+)/i),
+    reason: pick(/panicString"?\s*[:=]\s*"?([^"\n]+)/i) || pick(/^Exception (?:Type|Note):\s*(.+)/i) || pick(/"?bug_type"?\s*[:=]\s*"?([^",\n]+)/i),
+  };
+}
+
+function PanicsCard({ panics, message, loading, onLoad }: { panics: CrashReport[]; message: string | null; loading: boolean; onLoad: () => void }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+  return (
+    <section className="rounded-3xl border border-border bg-card/60 p-5 backdrop-blur">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-amber-500" aria-hidden="true" />
+          <h3 className="text-base font-semibold">Historial de panics</h3>
+          {panics.length > 0 && (
+            <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive">
+              {panics.length}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onLoad}
+          disabled={loading}
+          className="inline-flex min-h-9 items-center gap-2 rounded-full border border-border bg-background/50 px-4 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />
+          {loading ? "Descargando…" : panics.length ? "Actualizar" : "Descargar crash logs"}
+        </button>
+      </div>
+      {message && <p className="mt-3 text-sm text-muted-foreground">{message}</p>}
+      {panics.length === 0 && !loading && !message && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Pulsa el botón para descargar los crash logs del iPhone y mostrar los panics del kernel.
+        </p>
+      )}
+      {panics.length > 0 && (
+        <ul className="mt-4 space-y-2">
+          {panics.slice(0, 20).map((p, i) => {
+            const sum = extractPanicSummary(p.head);
+            const open = openIdx === i;
+            return (
+              <li key={p.path} className="rounded-2xl border border-border bg-background/40">
+                <button
+                  type="button"
+                  onClick={() => setOpenIdx(open ? null : i)}
+                  className="flex w-full items-start justify-between gap-3 p-3 text-left hover:bg-accent/40"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{sum.reason || p.file}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {new Date(p.mtime).toLocaleString()}
+                      {sum.os ? ` · ${sum.os}` : ""}
+                      {sum.product ? ` · ${sum.product}` : ""}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground">{open ? "▲" : "▼"}</span>
+                </button>
+                {open && (
+                  <pre className="max-h-72 overflow-auto border-t border-border bg-black/40 p-3 text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                    {p.head}
+                  </pre>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }
