@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Usb,
   RefreshCw,
@@ -11,8 +11,24 @@ import {
   CheckCircle2,
   Download,
   ArrowLeft,
+  FileDown,
+  ShieldAlert,
+  ShieldCheck,
+  Activity,
+  Play,
+  Pause,
+  Trash2,
 } from "lucide-react";
-import { getBridge, type BridgeInfo } from "@/lib/iphone-bridge";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Tooltip as ReTooltip,
+} from "recharts";
+import { getBridge, type BridgeInfo, type HistoryEntry } from "@/lib/iphone-bridge";
+import jsPDF from "jspdf";
 
 export const Route = createFileRoute("/diagnostico")({
   head: () => ({
@@ -21,18 +37,19 @@ export const Route = createFileRoute("/diagnostico")({
       {
         name: "description",
         content:
-          "Lee batería real, ciclos, salud, IMEI, almacenamiento y sensores de tu iPhone conectado por USB. Solo en la app de escritorio.",
+          "Batería real, ciclos, salud, IMEI, almacenamiento, autenticidad de piezas y syslog en vivo del iPhone conectado por USB.",
       },
     ],
   }),
   component: DiagnosticoPage,
 });
 
-type DeviceSnapshot = {
+type Snapshot = {
   udid: string;
   info: Record<string, unknown> | null;
   battery: Record<string, unknown> | null;
   storage: Record<string, unknown> | null;
+  diagnostics: Record<string, unknown> | null;
   loadedAt: number;
 };
 
@@ -41,14 +58,23 @@ function pick(obj: Record<string, unknown> | null | undefined, ...keys: string[]
   for (const k of keys) if (obj[k] !== undefined && obj[k] !== null && obj[k] !== "") return obj[k];
   return undefined;
 }
-
+function num(v: unknown): number | undefined {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
 function fmtBytes(n: unknown) {
-  const v = typeof n === "number" ? n : Number(n);
-  if (!Number.isFinite(v) || v <= 0) return "—";
+  const v = num(n);
+  if (!v || v <= 0) return "—";
   const gb = v / 1024 ** 3;
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  const mb = v / 1024 ** 2;
-  return `${mb.toFixed(0)} MB`;
+  return `${(v / 1024 ** 2).toFixed(0)} MB`;
+}
+
+function computeBatteryHealth(battery: Record<string, unknown> | null) {
+  const design = num(pick(battery, "DesignCapacity"));
+  const full = num(pick(battery, "AppleRawMaxCapacity", "FullChargeCapacity"));
+  if (!design || !full) return undefined;
+  return Math.max(0, Math.min(100, Math.round((full / design) * 100)));
 }
 
 function DiagnosticoPage() {
@@ -56,7 +82,11 @@ function DiagnosticoPage() {
   const [bridgeInfo, setBridgeInfo] = useState<BridgeInfo | null>(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [snapshot, setSnapshot] = useState<DeviceSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [syslog, setSyslog] = useState<string[]>([]);
+  const [syslogOn, setSyslogOn] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     if (!bridge) return;
@@ -68,24 +98,43 @@ function DiagnosticoPage() {
         setSnapshot(null);
         setError(
           detected.ok
-            ? "No se detectó ningún iPhone. Conecta el cable y toca 'Confiar' en el iPhone."
+            ? "No se detectó ningún iPhone. Conecta el cable, desbloquea el equipo y toca 'Confiar' cuando aparezca el aviso."
             : detected.error ||
-                "No pude comunicarme con el iPhone. ¿Está instalado Apple Devices / iTunes?",
+                "No pude comunicarme con el iPhone. Verifica que Apple Devices / iTunes esté instalado.",
         );
         return;
       }
       const udid = detected.devices[0];
-      const [info, battery, storage] = await Promise.all([
+      const [info, battery, storage, diagnostics, hist] = await Promise.all([
         bridge.info({ udid }),
         bridge.battery({ udid }),
         bridge.storage({ udid }),
+        bridge.diagnostics({ udid }),
+        bridge.historyRead({ udid }),
       ]);
-      setSnapshot({
+      const snap: Snapshot = {
         udid,
         info: info.ok ? (info.data ?? null) : null,
         battery: battery.ok ? (battery.data ?? null) : null,
         storage: storage.ok ? (storage.data ?? null) : null,
+        diagnostics: diagnostics.ok ? (diagnostics.data ?? null) : null,
         loadedAt: Date.now(),
+      };
+      setSnapshot(snap);
+      setHistory(hist.ok ? (hist.entries ?? []) : []);
+
+      // Guardar snapshot en historial
+      const totalCap = num(pick(snap.storage, "TotalDiskCapacity"));
+      const freeCap = num(pick(snap.storage, "AmountDataAvailable", "TotalDataAvailable"));
+      const usedPct = totalCap && freeCap ? Math.round(((totalCap - freeCap) / totalCap) * 100) : undefined;
+      await bridge.historyAppend({
+        udid,
+        snapshot: {
+          batteryLevel: num(pick(snap.battery, "BatteryCurrentCapacity")),
+          batteryHealth: computeBatteryHealth(snap.battery),
+          cycles: num(pick(snap.battery, "CycleCount")),
+          storageUsedPct: usedPct,
+        },
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error desconocido");
@@ -100,9 +149,83 @@ function DiagnosticoPage() {
     refresh();
   }, [bridge, refresh]);
 
+  useEffect(() => {
+    if (!bridge) return;
+    const off = bridge.onSyslog((p) => {
+      setSyslog((prev) => {
+        const next = [...prev, ...p.line.split(/\r?\n/).filter(Boolean)];
+        return next.slice(-500);
+      });
+    });
+    return () => { off(); };
+  }, [bridge]);
+
+  const toggleSyslog = async () => {
+    if (!bridge || !snapshot) return;
+    if (syslogOn) {
+      await bridge.syslogStop({ udid: snapshot.udid });
+      setSyslogOn(false);
+    } else {
+      setSyslog([]);
+      await bridge.syslogStart({ udid: snapshot.udid });
+      setSyslogOn(true);
+    }
+  };
+
+  const exportPdf = () => {
+    if (!snapshot) return;
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const W = doc.internal.pageSize.getWidth();
+    let y = 60;
+    doc.setFontSize(20); doc.text("Diagnóstico iPhone", 40, y); y += 8;
+    doc.setFontSize(9); doc.setTextColor(120);
+    doc.text(new Date(snapshot.loadedAt).toLocaleString(), 40, y + 12); y += 30;
+    doc.setTextColor(0);
+
+    const section = (title: string, rows: [string, string][]) => {
+      doc.setFontSize(13); doc.setFont("helvetica", "bold");
+      doc.text(title, 40, y); y += 6;
+      doc.setDrawColor(200); doc.line(40, y, W - 40, y); y += 14;
+      doc.setFontSize(10); doc.setFont("helvetica", "normal");
+      rows.forEach(([k, v]) => {
+        if (y > 780) { doc.addPage(); y = 60; }
+        doc.setTextColor(110); doc.text(k, 40, y);
+        doc.setTextColor(0); doc.text(String(v || "—"), 220, y);
+        y += 16;
+      });
+      y += 12;
+    };
+
+    const b = snapshot.battery, i = snapshot.info, s = snapshot.storage;
+    section("Identidad", [
+      ["Nombre", String(pick(i, "DeviceName") ?? "—")],
+      ["Modelo", String(pick(i, "ProductType", "ModelNumber") ?? "—")],
+      ["iOS", String(pick(i, "ProductVersion") ?? "—")],
+      ["Serie", String(pick(i, "SerialNumber") ?? "—")],
+      ["IMEI", String(pick(i, "InternationalMobileEquipmentIdentity") ?? "—")],
+      ["UDID", snapshot.udid],
+    ]);
+    section("Batería", [
+      ["Nivel actual", `${num(pick(b, "BatteryCurrentCapacity")) ?? "—"}%`],
+      ["Salud", `${computeBatteryHealth(b) ?? "—"}%`],
+      ["Ciclos", String(num(pick(b, "CycleCount")) ?? "—")],
+      ["Capacidad diseño", `${num(pick(b, "DesignCapacity")) ?? "—"} mAh`],
+      ["Capacidad actual", `${num(pick(b, "AppleRawMaxCapacity", "FullChargeCapacity")) ?? "—"} mAh`],
+    ]);
+    const total = num(pick(s, "TotalDiskCapacity"));
+    const free = num(pick(s, "AmountDataAvailable", "TotalDataAvailable"));
+    section("Almacenamiento", [
+      ["Total", fmtBytes(total)],
+      ["Usado", fmtBytes(total && free ? total - free : undefined)],
+      ["Libre", fmtBytes(free)],
+    ]);
+
+    doc.save(`diagnostico-${snapshot.udid.slice(0, 8)}-${Date.now()}.pdf`);
+  };
+
   return (
-    <div className="mx-auto max-w-5xl px-5 py-10 sm:px-6 sm:py-14">
-      <div className="flex items-center justify-between gap-4">
+    <div className="mx-auto max-w-6xl px-5 py-10 sm:px-6 sm:py-14">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <span className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-primary">
             <Usb className="h-3.5 w-3.5" aria-hidden="true" />
@@ -112,19 +235,30 @@ function DiagnosticoPage() {
             Diagnóstico avanzado
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
-            Batería, almacenamiento, IMEI, sensores y logs — leídos directamente del iPhone
-            vía el protocolo <code className="rounded bg-muted px-1.5 py-0.5 text-xs">lockdownd</code>.
+            Batería, ciclos, salud, autenticidad de piezas y syslog en vivo — vía protocolo
+            <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-xs">lockdownd</code>.
           </p>
         </div>
         {bridge && (
-          <button
-            onClick={refresh}
-            disabled={scanning}
-            className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-[1.02] disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            <RefreshCw className={`h-4 w-4 ${scanning ? "animate-spin" : ""}`} aria-hidden="true" />
-            {scanning ? "Escaneando…" : "Volver a escanear"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {snapshot && (
+              <button
+                onClick={exportPdf}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-card/60 px-5 py-2.5 text-sm font-medium backdrop-blur hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <FileDown className="h-4 w-4" aria-hidden="true" />
+                Exportar PDF
+              </button>
+            )}
+            <button
+              onClick={refresh}
+              disabled={scanning}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-[1.02] disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <RefreshCw className={`h-4 w-4 ${scanning ? "animate-spin" : ""}`} aria-hidden="true" />
+              {scanning ? "Escaneando…" : "Escanear"}
+            </button>
+          </div>
         )}
       </div>
 
@@ -141,8 +275,9 @@ function DiagnosticoPage() {
       )}
 
       {bridge && snapshot && (
-        <div className="mt-10 space-y-5">
+        <div ref={reportRef} className="mt-10 space-y-5">
           <ConnectedBanner udid={snapshot.udid} loadedAt={snapshot.loadedAt} />
+          <HealthScore snapshot={snapshot} />
 
           <div className="grid gap-4 md:grid-cols-2">
             <IdentityCard info={snapshot.info} />
@@ -150,23 +285,23 @@ function DiagnosticoPage() {
             <StorageCard storage={snapshot.storage} />
             <SystemCard info={snapshot.info} />
           </div>
+
+          <AuthenticityCard snapshot={snapshot} syslog={syslog} />
+          <HistoryCard history={history} />
+          <SyslogCard lines={syslog} on={syslogOn} onToggle={toggleSyslog} onClear={() => setSyslog([])} />
         </div>
       )}
 
       {bridgeInfo && (
         <p className="mt-10 text-center text-xs text-muted-foreground">
           Bridge v{bridgeInfo.appVersion} · {bridgeInfo.platform}/{bridgeInfo.arch}
-          {bridgeInfo.binDir ? " · binarios locales" : " · usando PATH del sistema"}
+          {bridgeInfo.binDir ? " · binarios locales" : " · PATH del sistema"}
         </p>
       )}
 
       <div className="mt-12 flex justify-center">
-        <Link
-          to="/"
-          className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-card/50 px-5 py-2.5 text-sm font-medium backdrop-blur transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Volver al inicio
+        <Link to="/" className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-card/50 px-5 py-2.5 text-sm font-medium backdrop-blur hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Volver al inicio
         </Link>
       </div>
     </div>
@@ -185,25 +320,23 @@ function WebModeNotice() {
             Esta función requiere la app de escritorio
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
-            El navegador no puede leer el hardware del iPhone por privacidad. Para acceder a
-            batería real, ciclos, IMEI, almacenamiento y logs necesitas la versión{" "}
-            <strong className="text-foreground">.exe / .app</strong>, que se conecta al iPhone
-            por USB usando el mismo protocolo que iTunes.
+            El navegador no puede leer el hardware del iPhone. La versión{" "}
+            <strong className="text-foreground">.exe</strong> se conecta al iPhone por USB usando
+            el mismo protocolo que iTunes y obtiene: batería real (salud, ciclos, temperatura),
+            almacenamiento, IMEI, autenticidad de piezas y logs en vivo.
           </p>
-
           <ul className="mt-6 grid gap-3 text-sm sm:grid-cols-3">
             <RequirementItem title="Windows 10/11" desc="Con Apple Devices o iTunes instalado." />
             <RequirementItem title="Cable USB" desc="Lightning o USB-C, original recomendado." />
             <RequirementItem title="Confiar en el PC" desc="Popup en el iPhone la primera vez." />
           </ul>
-
           <div className="mt-6 rounded-2xl border border-primary/30 bg-primary/10 p-4 text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">Estado actual del build</p>
+            <p className="font-medium text-foreground">Instalador disponible</p>
             <p className="mt-1">
-              El puente IPC ya está integrado. El instalador <code>.exe</code> se genera con{" "}
-              <code>bun run electron:pack</code> (ver <code>ELECTRON.md</code>). Mientras tanto,
-              usa las <Link to="/" className="text-primary underline">pruebas interactivas</Link>{" "}
-              que sí funcionan desde la web.
+              El <code>.exe</code> lo generas con <code>bun run electron:pack:win</code> (ver{" "}
+              <code>ELECTRON.md</code>). Mientras tanto, prueba las{" "}
+              <Link to="/" className="text-primary underline">pruebas interactivas</Link> desde
+              cualquier navegador.
             </p>
           </div>
         </div>
@@ -235,28 +368,64 @@ function ConnectedBanner({ udid, loadedAt }: { udid: string; loadedAt: number })
         <p className="truncate font-mono text-xs text-muted-foreground">UDID: {udid}</p>
       </div>
       <span className="hidden text-xs text-muted-foreground sm:inline">
-        Leído a las {new Date(loadedAt).toLocaleTimeString()}
+        {new Date(loadedAt).toLocaleTimeString()}
       </span>
     </div>
   );
 }
 
-function InfoCard({
-  icon: Icon,
-  title,
-  children,
-}: {
-  icon: typeof Cpu;
-  title: string;
-  children: React.ReactNode;
-}) {
+function HealthScore({ snapshot }: { snapshot: Snapshot }) {
+  const health = computeBatteryHealth(snapshot.battery);
+  const cycles = num(pick(snapshot.battery, "CycleCount"));
+  const total = num(pick(snapshot.storage, "TotalDiskCapacity"));
+  const free = num(pick(snapshot.storage, "AmountDataAvailable", "TotalDataAvailable"));
+  const storagePct = total && free ? Math.round(((total - free) / total) * 100) : undefined;
+
+  // Score global 0-100.
+  let score = 100;
+  if (health !== undefined) score -= Math.max(0, 100 - health) * 0.6;
+  if (cycles !== undefined) score -= Math.min(30, cycles / 20);
+  if (storagePct !== undefined && storagePct > 90) score -= 10;
+  const final = Math.max(0, Math.min(100, Math.round(score)));
+  const tone = final >= 85 ? "primary" : final >= 65 ? "primary" : "destructive";
+
+  return (
+    <section className="grid gap-4 rounded-2xl border border-border bg-card p-6 sm:grid-cols-[auto_1fr]">
+      <div className="flex items-center gap-4">
+        <div className={`grid h-20 w-20 place-items-center rounded-2xl bg-${tone}/15 text-${tone} ring-1 ring-inset ring-${tone}/30`}>
+          <span className="text-3xl font-semibold tracking-tight">{final}</span>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Score global</p>
+          <p className="mt-1 text-lg font-semibold">
+            {final >= 85 ? "Excelente" : final >= 65 ? "Aceptable" : "Requiere atención"}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3 text-sm">
+        <MiniStat label="Salud batería" value={health !== undefined ? `${health}%` : "—"} />
+        <MiniStat label="Ciclos" value={cycles !== undefined ? String(cycles) : "—"} />
+        <MiniStat label="Almacen." value={storagePct !== undefined ? `${storagePct}%` : "—"} />
+      </div>
+    </section>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-secondary/50 p-3">
+      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-1 text-xl font-semibold tracking-tight">{value}</p>
+    </div>
+  );
+}
+
+function InfoCard({ icon: Icon, title, children }: { icon: typeof Cpu; title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-2xl border border-border bg-card p-6">
       <div className="flex items-center gap-2">
         <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
-        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-          {title}
-        </h2>
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">{title}</h2>
       </div>
       <div className="mt-4">{children}</div>
     </section>
@@ -273,38 +442,32 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function IdentityCard({ info }: { info: Record<string, unknown> | null }) {
-  const model = pick(info, "ProductType", "ModelNumber") as string | undefined;
-  const name = pick(info, "DeviceName") as string | undefined;
-  const ios = pick(info, "ProductVersion") as string | undefined;
-  const build = pick(info, "BuildVersion") as string | undefined;
-  const serial = pick(info, "SerialNumber") as string | undefined;
-  const imei = pick(info, "InternationalMobileEquipmentIdentity") as string | undefined;
   return (
     <InfoCard icon={Cpu} title="Identidad">
-      <Row label="Nombre" value={name} />
-      <Row label="Modelo" value={model} />
-      <Row label="iOS" value={ios ? `${ios}${build ? ` (${build})` : ""}` : undefined} />
-      <Row label="Nº serie" value={serial} />
-      <Row label="IMEI" value={imei} />
+      <Row label="Nombre" value={pick(info, "DeviceName") as string} />
+      <Row label="Modelo" value={pick(info, "ProductType", "ModelNumber") as string} />
+      <Row label="iOS" value={pick(info, "ProductVersion") as string} />
+      <Row label="Build" value={pick(info, "BuildVersion") as string} />
+      <Row label="Nº serie" value={pick(info, "SerialNumber") as string} />
+      <Row label="IMEI" value={pick(info, "InternationalMobileEquipmentIdentity") as string} />
     </InfoCard>
   );
 }
 
 function BatteryCard({ battery }: { battery: Record<string, unknown> | null }) {
-  const level = pick(battery, "BatteryCurrentCapacity") as number | undefined;
-  const cycles = pick(battery, "CycleCount") as number | undefined;
-  const design = pick(battery, "DesignCapacity") as number | undefined;
-  const full = pick(battery, "AppleRawMaxCapacity", "FullChargeCapacity") as number | undefined;
-  const health =
-    design && full ? Math.round((Number(full) / Number(design)) * 100) : undefined;
-  const temp = pick(battery, "Temperature") as number | undefined;
+  const level = num(pick(battery, "BatteryCurrentCapacity"));
+  const cycles = num(pick(battery, "CycleCount"));
+  const design = num(pick(battery, "DesignCapacity"));
+  const full = num(pick(battery, "AppleRawMaxCapacity", "FullChargeCapacity"));
+  const health = computeBatteryHealth(battery);
+  const temp = num(pick(battery, "Temperature"));
   return (
     <InfoCard icon={BatteryFull} title="Batería">
-      {typeof level === "number" && (
+      {level !== undefined && (
         <>
           <div className="flex items-baseline gap-2">
             <span className="text-4xl font-semibold tracking-tight">{level}</span>
-            <span className="text-lg text-muted-foreground">% nivel actual</span>
+            <span className="text-lg text-muted-foreground">% actual</span>
           </div>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
             <div className="h-full rounded-full bg-primary" style={{ width: `${level}%` }} />
@@ -312,24 +475,24 @@ function BatteryCard({ battery }: { battery: Record<string, unknown> | null }) {
         </>
       )}
       <div className="mt-4">
-        <Row label="Salud" value={health !== undefined ? `${health}%` : "—"} />
+        <Row label="Salud" value={health !== undefined ? `${health}%` : undefined} />
         <Row label="Ciclos" value={cycles} />
         <Row label="Cap. diseño" value={design ? `${design} mAh` : undefined} />
         <Row label="Cap. actual" value={full ? `${full} mAh` : undefined} />
-        <Row label="Temperatura" value={temp ? `${(Number(temp) / 100).toFixed(1)} °C` : undefined} />
+        <Row label="Temperatura" value={temp ? `${(temp / 100).toFixed(1)} °C` : undefined} />
       </div>
     </InfoCard>
   );
 }
 
 function StorageCard({ storage }: { storage: Record<string, unknown> | null }) {
-  const total = pick(storage, "TotalDiskCapacity") as number | undefined;
-  const free = pick(storage, "AmountDataAvailable", "TotalDataAvailable") as number | undefined;
-  const used = total && free ? Number(total) - Number(free) : undefined;
-  const pct = total && used ? Math.round((used / Number(total)) * 100) : undefined;
+  const total = num(pick(storage, "TotalDiskCapacity"));
+  const free = num(pick(storage, "AmountDataAvailable", "TotalDataAvailable"));
+  const used = total && free ? total - free : undefined;
+  const pct = total && used ? Math.round((used / total) * 100) : undefined;
   return (
     <InfoCard icon={HardDrive} title="Almacenamiento">
-      {typeof pct === "number" && (
+      {pct !== undefined && (
         <>
           <div className="flex items-baseline gap-2">
             <span className="text-4xl font-semibold tracking-tight">{pct}</span>
@@ -350,18 +513,192 @@ function StorageCard({ storage }: { storage: Record<string, unknown> | null }) {
 }
 
 function SystemCard({ info }: { info: Record<string, unknown> | null }) {
-  const region = pick(info, "RegionInfo") as string | undefined;
-  const modem = pick(info, "BasebandVersion") as string | undefined;
-  const carrier = pick(info, "CarrierBundleInfoArray", "SIMStatus") as string | undefined;
-  const wifi = pick(info, "WiFiAddress") as string | undefined;
-  const bt = pick(info, "BluetoothAddress") as string | undefined;
   return (
     <InfoCard icon={Signal} title="Sistema y radios">
-      <Row label="Región" value={region} />
-      <Row label="Modem" value={modem} />
-      <Row label="SIM / Operador" value={typeof carrier === "string" ? carrier : undefined} />
-      <Row label="WiFi MAC" value={wifi} />
-      <Row label="Bluetooth MAC" value={bt} />
+      <Row label="Región" value={pick(info, "RegionInfo") as string} />
+      <Row label="Modem" value={pick(info, "BasebandVersion") as string} />
+      <Row label="WiFi MAC" value={pick(info, "WiFiAddress") as string} />
+      <Row label="Bluetooth MAC" value={pick(info, "BluetoothAddress") as string} />
+      <Row label="Zona horaria" value={pick(info, "TimeZone") as string} />
+      <Row label="Idioma" value={pick(info, "Language") as string} />
     </InfoCard>
+  );
+}
+
+function AuthenticityCard({ snapshot, syslog }: { snapshot: Snapshot; syslog: string[] }) {
+  // Heurística: iOS registra en syslog patrones como "Unknown Part" cuando detecta
+  // batería/pantalla no originales. También revisamos claves de gestalt.
+  const suspiciousLines = syslog.filter((l) =>
+    /unknown\s*part|non[- ]?genuine|not\s+a\s+genuine|counterfeit|CoreOptics.*mismatch|BatteryPack.*mismatch/i.test(l),
+  );
+  const batterySerial = pick(snapshot.battery, "Serial", "BatterySerialNumber") as string | undefined;
+  const cycles = num(pick(snapshot.battery, "CycleCount"));
+  const health = computeBatteryHealth(snapshot.battery);
+
+  const flags: { level: "ok" | "warn" | "bad"; title: string; detail: string }[] = [];
+  if (suspiciousLines.length > 0) {
+    flags.push({
+      level: "bad",
+      title: "iOS reporta pieza no original",
+      detail: `Se detectaron ${suspiciousLines.length} mensajes de "unknown part" en el syslog. Abre el panel de logs para ver detalles.`,
+    });
+  } else {
+    flags.push({
+      level: "ok",
+      title: "Sin alertas de piezas no originales",
+      detail: "iOS no está reportando componentes desconocidos en los logs monitorizados.",
+    });
+  }
+  if (health !== undefined && health < 80) {
+    flags.push({
+      level: "warn",
+      title: "Salud de batería baja",
+      detail: `${health}% — Apple recomienda reemplazar por debajo del 80%.`,
+    });
+  }
+  if (cycles !== undefined && cycles > 800) {
+    flags.push({
+      level: "warn",
+      title: "Ciclos elevados",
+      detail: `${cycles} ciclos — el diseño de iPhone contempla ~1000 al 80%.`,
+    });
+  }
+  if (batterySerial) {
+    flags.push({
+      level: "ok",
+      title: "Serie batería legible",
+      detail: batterySerial,
+    });
+  }
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-6">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" />
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+          Autenticidad de piezas
+        </h2>
+        <span className="ml-2 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+          Beta
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Basado en logs del sistema y series de componentes. Activa el <strong>Syslog en vivo</strong> abajo
+        para mejorar la detección — iOS publica los avisos "Unknown Part" en tiempo real.
+      </p>
+      <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+        {flags.map((f, i) => (
+          <li key={i} className={`flex items-start gap-3 rounded-xl border p-3 ${f.level === "bad" ? "border-destructive/40 bg-destructive/10" : f.level === "warn" ? "border-amber-500/40 bg-amber-500/10" : "border-primary/30 bg-primary/5"}`}>
+            {f.level === "bad" ? (
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+            ) : f.level === "warn" ? (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
+            ) : (
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{f.title}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{f.detail}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function HistoryCard({ history }: { history: HistoryEntry[] }) {
+  const data = useMemo(
+    () =>
+      history.map((h) => ({
+        t: new Date(h.t).toLocaleDateString(),
+        Salud: h.batteryHealth ?? null,
+        Nivel: h.batteryLevel ?? null,
+      })),
+    [history],
+  );
+  return (
+    <section className="rounded-2xl border border-border bg-card p-6">
+      <div className="flex items-center gap-2">
+        <Activity className="h-4 w-4 text-primary" aria-hidden="true" />
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+          Historial de batería
+        </h2>
+      </div>
+      {data.length < 2 ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          Necesito al menos 2 lecturas para dibujar la evolución. Vuelve mañana tras un nuevo
+          escaneo — cada snapshot se guarda automáticamente en tu PC.
+        </p>
+      ) : (
+        <div className="mt-4 h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
+              <XAxis dataKey="t" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+              <YAxis domain={[0, 100]} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+              <ReTooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
+              <Line type="monotone" dataKey="Salud" stroke="oklch(0.58 0.22 275)" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Nivel" stroke="oklch(0.75 0.15 275)" strokeWidth={1.5} dot={false} strokeDasharray="4 4" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SyslogCard({ lines, on, onToggle, onClear }: { lines: string[]; on: boolean; onToggle: () => void; onClear: () => void }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
+  }, [lines]);
+  return (
+    <section className="rounded-2xl border border-border bg-card p-6">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-primary" aria-hidden="true" />
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+            Syslog en vivo
+          </h2>
+          {on && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-primary">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+              En vivo
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onClear}
+            className="inline-flex items-center gap-1 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <Trash2 className="h-3 w-3" aria-hidden="true" /> Limpiar
+          </button>
+          <button
+            onClick={onToggle}
+            className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            {on ? <Pause className="h-3 w-3" aria-hidden="true" /> : <Play className="h-3 w-3" aria-hidden="true" />}
+            {on ? "Detener" : "Iniciar"}
+          </button>
+        </div>
+      </div>
+      <div
+        ref={boxRef}
+        className="mt-4 h-64 overflow-auto rounded-xl bg-black/60 p-3 font-mono text-[11px] leading-relaxed text-primary/90 ring-1 ring-inset ring-border"
+      >
+        {lines.length === 0 ? (
+          <p className="text-muted-foreground">
+            {on ? "Esperando eventos del iPhone…" : "Pulsa Iniciar para ver los logs del sistema en tiempo real."}
+          </p>
+        ) : (
+          lines.map((l, i) => (
+            <div key={i} className={/unknown\s*part|error|fatal/i.test(l) ? "text-destructive" : ""}>
+              {l}
+            </div>
+          ))
+        )}
+      </div>
+    </section>
   );
 }

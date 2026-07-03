@@ -1,80 +1,87 @@
 # Construir el .exe (Windows) y .app (macOS)
 
-Este proyecto se puede empaquetar como aplicación de escritorio con Electron
-para leer el iPhone por USB usando **libimobiledevice**.
+Todo el código de la app de escritorio ya está en el repo. Estos son los pasos
+para generar el instalador en **tu propia máquina**.
 
-## Estado actual
+## Por qué no puedo compilar el .exe desde el editor de Lovable
 
-- ✅ Puente IPC React ↔ Node (`electron/main.cjs`, `electron/preload.cjs`)
-- ✅ Página `/diagnostico` que consume el puente
-- ✅ `vite.config.ts` con `base: "./"` para cargar bajo `file://`
-- ⏳ Binarios `libimobiledevice` para Windows/macOS (descargar antes de empaquetar)
+El sandbox de Lovable fuerza el build de Vite/Nitro al preset `cloudflare-module`
+(Cloudflare Worker), que no es ejecutable dentro de Electron. En tu PC, sin ese
+lock, el build usa el preset `node-server` y todo funciona.
 
-## 1. Instalar dependencias de Electron
+Solución práctica: descarga el proyecto y ejecuta el packager localmente. La
+compilación toma ~2 minutos y el resultado pesa ~200 MB.
 
-```bash
-bun add -d electron @electron/packager
-```
+## Requisitos en tu PC
 
-Después añade estos scripts a `package.json` (no los añado automáticamente
-para no chocar con builds del preview):
+- **Windows 10/11** (o macOS)
+- **Node 20+** o **Bun**
+- **Apple Devices** (Microsoft Store) o **iTunes** — proporciona el driver USB del iPhone
+- Cable original Lightning / USB-C
 
-```json
-{
-  "main": "electron/main.cjs",
-  "scripts": {
-    "electron:dev": "ELECTRON_START_URL=http://localhost:8080 electron .",
-    "electron:build": "vite build && electron .",
-    "electron:pack:win": "vite build && electron-packager . iPhoneDiag --platform=win32 --arch=x64 --out=electron-release --overwrite --extra-resource=libimobiledevice/win32-x64 --ignore='^/src' --ignore='^/public' --ignore='^/electron-release'",
-    "electron:pack:mac": "vite build && electron-packager . iPhoneDiag --platform=darwin --arch=arm64 --out=electron-release --overwrite --extra-resource=libimobiledevice/darwin-arm64 --ignore='^/src' --ignore='^/public' --ignore='^/electron-release'"
-  }
-}
-```
-
-## 2. Bajar los binarios libimobiledevice
-
-Estos son los que hablan con el iPhone por USB. Ponlos en la carpeta del OS:
-
-### Windows
-
-Descarga desde **imobiledevice-net** (build oficial mantenido):
-https://github.com/libimobiledevice-win32/imobiledevice-net/releases
-
-Extrae el zip a `libimobiledevice/win32-x64/` — necesitas estos ejecutables:
-- `idevice_id.exe`
-- `ideviceinfo.exe`
-- `idevicediagnostics.exe`
-- `ideviceinstaller.exe`
-- `idevicesyslog.exe`
-- todas las DLLs que vienen con ellos
-
-**Importante:** el usuario final necesita **Apple Devices** (Microsoft Store)
-o **iTunes** instalado para el driver USB. Sin eso, el iPhone no aparece.
-
-### macOS
+## Pasos
 
 ```bash
-brew install libimobiledevice
-# copiar binarios y dylibs a libimobiledevice/darwin-arm64/
+# 1. Clonar o descargar el proyecto (ya incluye los binarios libimobiledevice/win32-x64)
+git clone <tu-repo>
+cd <proyecto>
+
+# 2. Instalar dependencias
+bun install    # o: npm install
+
+# 3. Empaquetar
+bun run electron:pack:win     # Windows → electron-release/iPhoneDiag-win32-x64/iPhoneDiag.exe
+bun run electron:pack:mac     # macOS   → electron-release/iPhoneDiag-darwin-arm64/iPhoneDiag.app
+
+# 4. Abrir la app
+./electron-release/iPhoneDiag-win32-x64/iPhoneDiag.exe
 ```
 
-## 3. Compilar
+**En Windows, Defender puede avisar** "editor desconocido" porque el `.exe` no
+está firmado. Es normal para builds propios; pulsa "Más información → Ejecutar
+de todos modos". Para eliminar el aviso definitivamente necesitas un
+certificado de firma de código (~$100/año).
+
+## Estructura de archivos ya generada
+
+```
+electron/
+  main.cjs           # Proceso principal Electron + IPC handlers + syslog + historial
+  preload.cjs        # Puente seguro al renderer (contextBridge)
+
+libimobiledevice/
+  win32-x64/         # 50 archivos: ideviceinfo.exe, idevicediagnostics.exe, DLLs…
+
+src/
+  lib/iphone-bridge.ts       # Tipos TS del bridge (window.iphoneBridge)
+  routes/diagnostico.tsx     # Dashboard con score, batería, historial, syslog, PDF
+```
+
+## Funciones incluidas
+
+| Sección | Datos leídos del iPhone |
+|---|---|
+| **Score global** | Cálculo ponderado sobre salud batería + ciclos + almacenamiento |
+| **Identidad** | Nombre, modelo, iOS, build, nº serie, IMEI |
+| **Batería** | Nivel actual, salud %, ciclos, capacidad diseño/actual, temperatura |
+| **Almacenamiento** | Total, usado, libre, % ocupado |
+| **Sistema y radios** | Región, modem, WiFi MAC, Bluetooth MAC, zona horaria, idioma |
+| **Autenticidad de piezas** | Análisis de syslog para mensajes "Unknown Part" que iOS emite cuando detecta batería/pantalla no originales |
+| **Historial** | Gráfico de salud y nivel de batería a lo largo del tiempo (JSON en `userData/`) |
+| **Syslog en vivo** | Stream de logs del iPhone en tiempo real, con resaltado de errores |
+| **Exportar PDF** | Informe completo descargable con fecha y todos los datos |
+
+## Comprobar en desarrollo sin empaquetar
+
+Con el dev server corriendo (`bun run dev`):
 
 ```bash
-bun run electron:pack:win     # .exe en electron-release/iPhoneDiag-win32-x64/
-bun run electron:pack:mac     # .app en electron-release/iPhoneDiag-darwin-arm64/
+IMD_BIN_DIR=./libimobiledevice/win32-x64 bun run electron:dev
 ```
 
-## 4. Probar en desarrollo sin empaquetar
+## Fase 3 (roadmap)
 
-Con el dev server corriendo:
-
-```bash
-IMD_BIN_DIR=/ruta/a/libimobiledevice bun run electron:dev
-```
-
-## Próximas fases
-
-- **Fase 2**: historial de batería en SQLite local, detección de piezas no originales
-  vía MobileGestalt, syslog en vivo.
-- **Fase 3**: reporte PDF, comparativa con base de datos, modo técnico avanzado.
+- Comparativa con base de datos comunitaria (¿mi batería está en el promedio?)
+- Modo técnico avanzado: ~800 MobileGestalt keys crudos con búsqueda
+- Backup y screenshots del iPhone desde la app
+- Instalar/desinstalar `.ipa` (requiere firma Apple del usuario)

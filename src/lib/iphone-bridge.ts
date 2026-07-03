@@ -1,6 +1,6 @@
-// Tipos del puente Electron ↔ React inyectado por electron/preload.cjs.
+// Tipos del puente Electron ↔ React.
 export type BridgeResult<T = unknown> =
-  | { ok: true; data?: T; raw?: string; stdout?: string; stderr?: string }
+  | { ok: true; data?: T; raw?: string; stdout?: string; stderr?: string; entries?: HistoryEntry[] }
   | { ok: false; error?: string; stderr?: string; stdout?: string };
 
 export type DetectResult =
@@ -12,7 +12,18 @@ export type BridgeInfo = {
   arch: string;
   binDir: string | null;
   appVersion: string;
+  userData: string;
 };
+
+export type HistoryEntry = {
+  t: number;
+  batteryLevel?: number;
+  batteryHealth?: number;
+  cycles?: number;
+  storageUsedPct?: number;
+};
+
+export type SyslogPayload = { udid?: string; line: string; err?: boolean };
 
 export type IPhoneBridge = {
   isElectron: true;
@@ -21,7 +32,12 @@ export type IPhoneBridge = {
   info: (opts?: { udid?: string; domain?: string }) => Promise<BridgeResult<Record<string, unknown>>>;
   battery: (opts?: { udid?: string }) => Promise<BridgeResult<Record<string, unknown>>>;
   storage: (opts?: { udid?: string }) => Promise<BridgeResult<Record<string, unknown>>>;
-  diagnostics: (opts?: { udid?: string }) => Promise<BridgeResult>;
+  diagnostics: (opts?: { udid?: string }) => Promise<BridgeResult<Record<string, unknown>>>;
+  historyAppend: (opts: { udid: string; snapshot: Omit<HistoryEntry, "t"> }) => Promise<{ ok: true }>;
+  historyRead: (opts: { udid: string }) => Promise<BridgeResult<never>>;
+  syslogStart: (opts?: { udid?: string }) => Promise<{ ok: true }>;
+  syslogStop: (opts?: { udid?: string }) => Promise<{ ok: true }>;
+  onSyslog: (fn: (p: SyslogPayload) => void) => () => void;
   openExternal: (url: string) => Promise<void>;
 };
 
