@@ -11,12 +11,20 @@ function resolveBinaryDir() {
     return process.env.IMD_BIN_DIR;
   }
   const platArch = `${process.platform}-${process.arch}`;
-  const packaged = path.join(process.resourcesPath || "", "libimobiledevice");
-  if (fs.existsSync(packaged)) return packaged;
-  const bundled = path.join(__dirname, "..", "libimobiledevice", platArch);
-  if (fs.existsSync(bundled)) return bundled;
-  const fallback = path.join(__dirname, "..", "libimobiledevice");
-  if (fs.existsSync(fallback)) return fallback;
+  // Cuando la app va empaquetada dentro de app.asar, los .exe/.dll deben leerse
+  // desde app.asar.unpacked (no se pueden ejecutar desde dentro del asar).
+  const dirname = __dirname.includes(`${path.sep}app.asar${path.sep}`)
+    ? __dirname.split(`${path.sep}app.asar${path.sep}`).join(`${path.sep}app.asar.unpacked${path.sep}`)
+    : __dirname;
+  const candidates = [
+    path.join(process.resourcesPath || "", "libimobiledevice", platArch),
+    path.join(process.resourcesPath || "", "libimobiledevice"),
+    path.join(dirname, "..", "libimobiledevice", platArch),
+    path.join(dirname, "..", "libimobiledevice"),
+  ];
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) return c;
+  }
   return null;
 }
 
