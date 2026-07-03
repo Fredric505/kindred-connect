@@ -169,6 +169,23 @@ function registerIpc(getWin) {
   ipcMain.handle("imd:battery", (_e, { udid } = {}) => getInfo(udid, "com.apple.mobile.battery"));
   ipcMain.handle("imd:storage", (_e, { udid } = {}) => getInfo(udid, "com.apple.disk_usage"));
   ipcMain.handle("imd:diagnostics", (_e, { udid } = {}) => getDiagnostics(udid));
+  ipcMain.handle("imd:pair", async (_e, { udid } = {}) => {
+    const args = ["pair"];
+    if (udid) args.push("-u", udid);
+    const r = await run(binPath("idevicepair"), args, 30000);
+    const out = String(r.stdout || "") + String(r.stderr || "");
+    const success = /SUCCESS|paired|is now paired/i.test(out);
+    if (success) return { ok: true, message: out.trim() };
+    if (/Please accept|trust/i.test(out)) return { ok: false, needsTrust: true, message: out.trim() };
+    return { ok: false, error: (r.error || out || "").trim() };
+  });
+  ipcMain.handle("imd:pair-status", async (_e, { udid } = {}) => {
+    const args = ["validate"];
+    if (udid) args.push("-u", udid);
+    const r = await run(binPath("idevicepair"), args, 10000);
+    const out = String(r.stdout || "") + String(r.stderr || "");
+    return { ok: /SUCCESS|validated/i.test(out), message: out.trim() };
+  });
   ipcMain.handle("imd:history-append", (_e, { udid, snapshot }) => { appendSnapshot(udid, snapshot); return { ok: true }; });
   ipcMain.handle("imd:history-read", (_e, { udid }) => ({ ok: true, entries: (readHistory()[udid] || []) }));
   ipcMain.handle("imd:syslog-start", (_e, { udid } = {}) => startSyslog(getWin(), udid));
