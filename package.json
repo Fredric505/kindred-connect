@@ -12,8 +12,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "electron:dev": "ELECTRON_START_URL=http://localhost:8080 electron .",
-    "electron:pack:win": "vite build && electron-packager . iPhoneDiag --platform=win32 --arch=x64 --out=electron-release --overwrite --extra-resource=libimobiledevice/win32-x64 --ignore='^/src' --ignore='^/public' --ignore='^/electron-release' --ignore='^/libimobiledevice'",
-    "electron:pack:mac": "vite build && electron-packager . iPhoneDiag --platform=darwin --arch=arm64 --out=electron-release --overwrite --extra-resource=libimobiledevice/darwin-arm64 --ignore='^/src' --ignore='^/public' --ignore='^/electron-release' --ignore='^/libimobiledevice'"
+    "electron:pack:win": "ELECTRON_BUILD=1 vite build && electron-packager . iPhoneDiag --platform=win32 --arch=x64 --out=electron-release --overwrite --extra-resource=libimobiledevice/win32-x64 --ignore='^/src' --ignore='^/public' --ignore='^/electron-release' --ignore='^/libimobiledevice'",
+    "electron:pack:mac": "ELECTRON_BUILD=1 vite build && electron-packager . iPhoneDiag --platform=darwin --arch=arm64 --out=electron-release --overwrite --extra-resource=libimobiledevice/darwin-arm64 --ignore='^/src' --ignore='^/public' --ignore='^/electron-release' --ignore='^/libimobiledevice'"
+
   },
 
   "dependencies": {
