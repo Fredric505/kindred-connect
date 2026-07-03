@@ -25,6 +25,8 @@ export type HistoryEntry = {
 
 export type SyslogPayload = { udid?: string; line: string; err?: boolean };
 
+export type CrashReport = { file: string; path: string; mtime: number; size: number; head: string };
+
 export type IPhoneBridge = {
   isElectron: true;
   bridgeInfo: () => Promise<BridgeInfo>;
