@@ -91,27 +91,6 @@ function DiagnosticoPage() {
   const [pairMsg, setPairMsg] = useState<string | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  const pair = useCallback(async () => {
-    if (!bridge || !snapshot) return;
-    setPairing(true);
-    setPairMsg(null);
-    try {
-      const r = await bridge.pair({ udid: snapshot.udid });
-      if (r.ok) {
-        setPairMsg("Emparejado correctamente. Reescanea para leer todos los datos.");
-        setTimeout(() => refresh(), 800);
-      } else if (r.needsTrust) {
-        setPairMsg("Desbloquea el iPhone y toca 'Confiar' en el aviso. Luego pulsa 'Emparejar' otra vez.");
-      } else {
-        setPairMsg(r.error || r.message || "No pude emparejar. Verifica que el iPhone esté desbloqueado.");
-      }
-    } catch (e) {
-      setPairMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setPairing(false);
-    }
-  }, [bridge, snapshot]);
-
   const refresh = useCallback(async () => {
     if (!bridge) return;
     setScanning(true);
@@ -147,7 +126,6 @@ function DiagnosticoPage() {
       setSnapshot(snap);
       setHistory(hist.ok ? (hist.entries ?? []) : []);
 
-      // Guardar snapshot en historial
       const totalCap = num(pick(snap.storage, "TotalDiskCapacity"));
       const freeCap = num(pick(snap.storage, "AmountDataAvailable", "TotalDataAvailable"));
       const usedPct = totalCap && freeCap ? Math.round(((totalCap - freeCap) / totalCap) * 100) : undefined;
@@ -166,6 +144,28 @@ function DiagnosticoPage() {
       setScanning(false);
     }
   }, [bridge]);
+
+  const pair = useCallback(async () => {
+    if (!bridge) return;
+    setPairing(true);
+    setPairMsg(null);
+    try {
+      const udid = snapshot?.udid;
+      const r = await bridge.pair(udid ? { udid } : {});
+      if (r.ok) {
+        setPairMsg("Emparejado correctamente. Reescaneando…");
+        setTimeout(() => refresh(), 800);
+      } else if (r.needsTrust) {
+        setPairMsg("Desbloquea el iPhone y toca 'Confiar' en el aviso. Luego pulsa 'Emparejar' otra vez.");
+      } else {
+        setPairMsg(r.error || r.message || "No pude emparejar. Verifica que el iPhone esté desbloqueado.");
+      }
+    } catch (e) {
+      setPairMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPairing(false);
+    }
+  }, [bridge, snapshot, refresh]);
 
   useEffect(() => {
     if (!bridge) return;
