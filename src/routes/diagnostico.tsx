@@ -265,6 +265,15 @@ function DiagnosticoPage() {
         </div>
         {bridge && (
           <div className="flex flex-wrap gap-2">
+            <button
+              onClick={pair}
+              disabled={pairing}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary/50 bg-primary/10 px-5 py-2.5 text-sm font-medium text-primary backdrop-blur hover:bg-primary/20 disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              title="Confía el PC con el iPhone (Trust). Necesario para leer batería, IMEI, serie e identidad."
+            >
+              <Link2 className={`h-4 w-4 ${pairing ? "animate-pulse" : ""}`} aria-hidden="true" />
+              {pairing ? "Emparejando…" : "Emparejar (Trust)"}
+            </button>
             {snapshot && (
               <button
                 onClick={exportPdf}
@@ -285,6 +294,13 @@ function DiagnosticoPage() {
           </div>
         )}
       </div>
+
+      {bridge && pairMsg && (
+        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4 text-sm">
+          <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+          <p className="text-foreground/90">{pairMsg}</p>
+        </div>
+      )}
 
       {!bridge && <WebModeNotice />}
 
