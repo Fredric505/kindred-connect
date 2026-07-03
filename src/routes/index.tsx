@@ -189,23 +189,40 @@ function Index() {
           </span>
         </Link>
 
-        {/* Descarga del código para compilar el .exe */}
-        <div className="mt-6 flex flex-col items-start gap-4 rounded-3xl border border-border bg-card/50 p-6 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-8">
+        {/* Descarga del .exe compilado */}
+        <div className="mt-6 flex flex-col items-start gap-4 rounded-3xl border border-primary/40 bg-linear-to-br from-primary/10 to-card/50 p-6 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-8">
           <div className="min-w-0">
             <h4 className="text-lg font-semibold tracking-tight">
-              Descarga el código fuente y genera el <code className="rounded bg-muted px-1.5 py-0.5 text-[13px]">.exe</code>
+              Descargar para Windows
+              <span className="ml-2 rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-primary">
+                .exe listo
+              </span>
             </h4>
             <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              Requiere Node.js 20+ e iTunes/Apple Devices en Windows. Ejecuta <code className="rounded bg-muted px-1 text-[12px]">build-exe.bat</code> con doble clic — se compila solo en 3-5 min.
+              Descomprime el ZIP y abre <code className="rounded bg-muted px-1 text-[12px]">iPhoneDiagnostics.exe</code>. Requiere iTunes o Apple Devices instalado (driver USB del iPhone).
             </p>
           </div>
           <a
-            href="/iphone-diagnostics-source.zip"
-            download
+            href="https://github.com/Fredric505/kindred-connect/releases/latest/download/iPhoneDiagnostics-win32-x64.zip"
             className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-[14px] font-medium text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-[1.02] hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
-            Descargar ZIP (4.4 MB)
+            Descargar .exe (195 MB)
+          </a>
+        </div>
+
+        {/* Descarga del código fuente (opcional) */}
+        <div className="mt-4 flex flex-col items-start gap-3 rounded-2xl border border-border bg-card/40 p-5 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            ¿Prefieres compilarlo tú mismo? Descarga el código fuente.
+          </p>
+          <a
+            href="/iphone-diagnostics-source.zip"
+            download
+            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-full border border-border bg-card/60 px-4 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            Código fuente (4.4 MB)
           </a>
         </div>
       </section>
