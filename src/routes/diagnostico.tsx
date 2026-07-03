@@ -18,6 +18,7 @@ import {
   Play,
   Pause,
   Trash2,
+  Link2,
 } from "lucide-react";
 import {
   LineChart,
