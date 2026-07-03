@@ -72,10 +72,17 @@ function fmtBytes(n: unknown) {
 }
 
 function computeBatteryHealth(battery: Record<string, unknown> | null) {
+  const reported = num(pick(battery, "BatteryHealth", "BatteryHealthMetric", "BatteryHealthPercent", "MaximumCapacityPercent"));
+  if (reported && reported > 0 && reported <= 100) return Math.round(reported);
   const design = num(pick(battery, "DesignCapacity"));
-  const full = num(pick(battery, "AppleRawMaxCapacity", "FullChargeCapacity"));
+  const full = num(pick(battery, "AppleRawMaxCapacity", "FullChargeCapacity", "FullAvailableCapacity", "MaxCapacity"));
   if (!design || !full) return undefined;
   return Math.max(0, Math.min(100, Math.round((full / design) * 100)));
+}
+
+function getBatterySourceStatus(battery: Record<string, unknown> | null) {
+  const raw = battery?._sourceStatus;
+  return Array.isArray(raw) ? raw as { name: string; ok: boolean; keys?: number; error?: string }[] : [];
 }
 
 function DiagnosticoPage() {
@@ -157,12 +164,7 @@ function DiagnosticoPage() {
         await refresh();
         // Verifica si tras el pair conseguimos identidad real (nombre / modelo).
         // Si sigue vacío, es limitación de iOS (17+/26 beta).
-        setPairMsg((prev) => {
-          // No podemos leer snapshot aquí (closure viejo); dejamos un mensaje neutro.
-          return prev === "Emparejado correctamente. Reescaneando…"
-            ? "Emparejado. Si los campos siguen vacíos, tu versión de iOS bloquea el acceso (iOS 17+/beta). Prueba a desconectar y reconectar el cable."
-            : prev;
-        });
+        setPairMsg("Emparejado. Hice un escaneo profundo por Lockdown, GasGauge e IORegistry; si faltan ciclos/salud/piezas, iOS no los está entregando por USB en esta versión.");
       } else if (r.needsTrust) {
         setPairMsg("Desbloquea el iPhone y toca 'Confiar' en el aviso. Luego pulsa 'Emparejar' otra vez.");
       } else {
@@ -506,9 +508,11 @@ function BatteryCard({ battery }: { battery: Record<string, unknown> | null }) {
   const level = num(pick(battery, "BatteryCurrentCapacity"));
   const cycles = num(pick(battery, "CycleCount"));
   const design = num(pick(battery, "DesignCapacity"));
-  const full = num(pick(battery, "AppleRawMaxCapacity", "FullChargeCapacity"));
+  const full = num(pick(battery, "AppleRawMaxCapacity", "FullChargeCapacity", "FullAvailableCapacity", "MaxCapacity"));
   const health = computeBatteryHealth(battery);
   const temp = num(pick(battery, "Temperature"));
+  const sourceStatus = getBatterySourceStatus(battery);
+  const sourceKeys = sourceStatus.reduce((sum, s) => sum + (s.keys ?? 0), 0);
   return (
     <InfoCard icon={BatteryFull} title="Batería">
       {level !== undefined && (
@@ -529,6 +533,15 @@ function BatteryCard({ battery }: { battery: Record<string, unknown> | null }) {
         <Row label="Cap. actual" value={full ? `${full} mAh` : undefined} />
         <Row label="Temperatura" value={temp ? `${(temp / 100).toFixed(1)} °C` : undefined} />
       </div>
+      {sourceStatus.length > 0 && (cycles === undefined || health === undefined) && (
+        <div className="mt-4 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">Lectura avanzada limitada</p>
+          <p className="mt-1">
+            Se probaron {sourceStatus.length} fuentes profundas y se encontraron {sourceKeys} claves de batería.
+            Si ciclos/salud siguen en blanco, tu iOS los está ocultando al PC.
+          </p>
+        </div>
+      )}
     </InfoCard>
   );
 }
@@ -582,6 +595,8 @@ function AuthenticityCard({ snapshot, syslog }: { snapshot: Snapshot; syslog: st
   const batterySerial = pick(snapshot.battery, "Serial", "BatterySerialNumber") as string | undefined;
   const cycles = num(pick(snapshot.battery, "CycleCount"));
   const health = computeBatteryHealth(snapshot.battery);
+  const sourceStatus = getBatterySourceStatus(snapshot.battery);
+  const blockedSources = sourceStatus.filter((s) => !s.ok).length;
 
   const flags: { level: "ok" | "warn" | "bad"; title: string; detail: string }[] = [];
   if (suspiciousLines.length > 0) {
@@ -589,6 +604,14 @@ function AuthenticityCard({ snapshot, syslog }: { snapshot: Snapshot; syslog: st
       level: "bad",
       title: "iOS reporta pieza no original",
       detail: `Se detectaron ${suspiciousLines.length} mensajes de "unknown part" en el syslog. Abre el panel de logs para ver detalles.`,
+    });
+  } else if (syslog.length === 0) {
+    flags.push({
+      level: "warn",
+      title: "Piezas no verificables por USB",
+      detail: blockedSources > 0
+        ? "iOS bloqueó logs/IORegistry necesarios para confirmar piezas. Revisa Ajustes > General > Información > Historial de piezas en el iPhone."
+        : "Activa Syslog en vivo para intentar capturar avisos de piezas; si iOS lo bloquea, solo el iPhone puede mostrarlo en Ajustes.",
     });
   } else {
     flags.push({
