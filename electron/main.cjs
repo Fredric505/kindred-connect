@@ -112,11 +112,129 @@ async function getInfo(udid, domain) {
   return { ok: true, data: parsePlist(r.stdout), raw: r.stdout };
 }
 
+function mergeMissing(target, source) {
+  if (!source || typeof source !== "object") return target;
+  for (const [k, v] of Object.entries(source)) {
+    if (v !== undefined && v !== null && v !== "" && target[k] === undefined) target[k] = v;
+  }
+  return target;
+}
+
+async function getMergedInfo(udid) {
+  const domains = [
+    undefined,
+    "com.apple.mobile.lockdown_cache",
+    "com.apple.international",
+    "com.apple.mobile.wireless_lockdown",
+  ];
+  const results = await Promise.all(domains.map((domain) => getInfo(udid, domain)));
+  const data = {};
+  const errors = [];
+  results.forEach((r, i) => {
+    if (r.ok) mergeMissing(data, r.data);
+    else errors.push(`${domains[i] || "default"}: ${r.error || "sin acceso"}`);
+  });
+  if (Object.keys(data).length === 0) return { ok: false, error: errors.join(" | ") || "No se pudo leer identidad" };
+  if (errors.length) data._sourceErrors = errors;
+  return { ok: true, data };
+}
+
 async function getDiagnostics(udid) {
   const args = ["diagnostics", "All"];
   if (udid) args.unshift("-u", udid);
   const r = await run(binPath("idevicediagnostics"), args, 30000);
   return r.ok ? { ok: true, data: parsePlist(r.stdout), raw: r.stdout } : { ok: false, error: r.error || r.stderr };
+}
+
+async function runDiagnostic(udid, parts, timeoutMs = 30000) {
+  const args = [];
+  if (udid) args.push("-u", udid);
+  args.push(...parts);
+  const r = await run(binPath("idevicediagnostics"), args, timeoutMs);
+  return r.ok ? { ok: true, data: parsePlist(r.stdout), raw: r.stdout } : { ok: false, error: r.error || r.stderr || r.stdout };
+}
+
+const ADVANCED_BATTERY_KEYS = new Set([
+  "AppleRawCurrentCapacity",
+  "AppleRawMaxCapacity",
+  "AtCriticalLevel",
+  "AtWarnLevel",
+  "BatteryData",
+  "BatteryHealth",
+  "BatteryHealthMetric",
+  "BatteryIsCharging",
+  "BatterySerialNumber",
+  "ChemID",
+  "CurrentCapacity",
+  "CycleCount",
+  "DesignCapacity",
+  "ExternalChargeCapable",
+  "ExternalConnected",
+  "Flags",
+  "FullAvailableCapacity",
+  "FullChargeCapacity",
+  "FullyCharged",
+  "InstantAmperage",
+  "IsCharging",
+  "ManufactureDate",
+  "Manufacturer",
+  "MaxCapacity",
+  "NominalChargeCapacity",
+  "Serial",
+  "Temperature",
+  "UpdateTime",
+  "Voltage",
+]);
+
+function extractBatteryFields(source) {
+  const out = {};
+  const visit = (value) => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    for (const [key, val] of Object.entries(value)) {
+      if (ADVANCED_BATTERY_KEYS.has(key) && val !== undefined && val !== null && typeof val !== "object" && out[key] === undefined) {
+        out[key] = val;
+      }
+      if (val && typeof val === "object") visit(val);
+    }
+  };
+  visit(source);
+  return out;
+}
+
+async function getAdvancedBattery(udid) {
+  const sourceDefs = [
+    ["lockdown", () => getInfo(udid, "com.apple.mobile.battery")],
+    ["diagnostics:GasGauge", () => runDiagnostic(udid, ["diagnostics", "GasGauge"])],
+    ["diagnostics:All", () => runDiagnostic(udid, ["diagnostics", "All"])],
+    ["ioregentry:AppleSmartBattery", () => runDiagnostic(udid, ["ioregentry", "AppleSmartBattery"])],
+    ["ioregentry:AppleARMPMUCharger", () => runDiagnostic(udid, ["ioregentry", "AppleARMPMUCharger"])],
+    ["ioreg:IOPower", () => runDiagnostic(udid, ["ioreg", "IOPower"], 45000)],
+  ];
+  const results = await Promise.all(sourceDefs.map(async ([name, fn]) => [name, await fn()]));
+  const data = {};
+  const sourceStatus = [];
+
+  for (const [name, result] of results) {
+    if (result.ok) {
+      const fields = name === "lockdown" ? (result.data || {}) : extractBatteryFields(result.data);
+      mergeMissing(data, fields);
+      sourceStatus.push({ name, ok: true, keys: Object.keys(fields).length });
+    } else {
+      sourceStatus.push({ name, ok: false, error: String(result.error || "sin acceso").slice(0, 500) });
+    }
+  }
+
+  if (data.AppleRawMaxCapacity === undefined && data.MaxCapacity !== undefined) data.AppleRawMaxCapacity = data.MaxCapacity;
+  if (data.FullChargeCapacity === undefined && data.FullAvailableCapacity !== undefined) data.FullChargeCapacity = data.FullAvailableCapacity;
+  if (data.Serial === undefined && data.BatterySerialNumber !== undefined) data.Serial = data.BatterySerialNumber;
+  data._sourceStatus = sourceStatus;
+
+  const hasAny = Object.keys(data).some((k) => !k.startsWith("_"));
+  return hasAny ? { ok: true, data } : { ok: false, error: sourceStatus.map((s) => `${s.name}: ${s.error || "sin claves"}`).join(" | ") };
 }
 
 // Historial: JSON en userData/history.json.
@@ -165,8 +283,8 @@ function registerIpc(getWin) {
     userData: app.getPath("userData"),
   }));
   ipcMain.handle("imd:detect", () => detectDevices());
-  ipcMain.handle("imd:info", (_e, { udid, domain } = {}) => getInfo(udid, domain));
-  ipcMain.handle("imd:battery", (_e, { udid } = {}) => getInfo(udid, "com.apple.mobile.battery"));
+  ipcMain.handle("imd:info", (_e, { udid, domain } = {}) => domain ? getInfo(udid, domain) : getMergedInfo(udid));
+  ipcMain.handle("imd:battery", (_e, { udid } = {}) => getAdvancedBattery(udid));
   ipcMain.handle("imd:storage", (_e, { udid } = {}) => getInfo(udid, "com.apple.disk_usage"));
   ipcMain.handle("imd:diagnostics", (_e, { udid } = {}) => getDiagnostics(udid));
   ipcMain.handle("imd:pair", async (_e, { udid } = {}) => {
