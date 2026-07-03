@@ -28,7 +28,7 @@ import {
   ResponsiveContainer,
   Tooltip as ReTooltip,
 } from "recharts";
-import { getBridge, type BridgeInfo, type HistoryEntry } from "@/lib/iphone-bridge";
+import { getBridge, type BridgeInfo, type HistoryEntry, type CrashReport } from "@/lib/iphone-bridge";
 import jsPDF from "jspdf";
 
 export const Route = createFileRoute("/diagnostico")({
