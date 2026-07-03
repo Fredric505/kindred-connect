@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/test/display")({
   head: () => ({
@@ -60,7 +61,7 @@ function DisplayTest() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-12">
+    <div className="mx-auto max-w-4xl px-5 py-10 sm:px-6 sm:py-14">
       <PageHeader
         eyebrow="Pantalla"
         title="Prueba de pantalla"
@@ -117,15 +118,15 @@ function DisplayTest() {
       </section>
 
       <BackHome />
-    </main>
+    </div>
   );
 }
 
 export function PageHeader({ eyebrow, title, desc }: { eyebrow: string; title: string; desc: string }) {
   return (
     <header>
-      <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</p>
-      <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">{title}</h1>
+      <p className="text-[12px] font-medium uppercase tracking-[0.18em] text-primary">{eyebrow}</p>
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-5xl">{title}</h1>
       <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">{desc}</p>
     </header>
   );
@@ -134,9 +135,14 @@ export function PageHeader({ eyebrow, title, desc }: { eyebrow: string; title: s
 export function BackHome() {
   return (
     <div className="mt-16">
-      <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
-        ← Volver a todas las pruebas
+      <Link
+        to="/"
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-card/50 px-4 py-2 text-sm text-muted-foreground backdrop-blur transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        Volver a todas las pruebas
       </Link>
     </div>
   );
 }
+
