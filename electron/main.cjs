@@ -224,17 +224,27 @@ async function createWindow() {
     mainWin.webContents.openDevTools({ mode: "detach" });
     return;
   }
-  const url = await startSsrServer();
-  if (url) {
-    mainWin.loadURL(url);
+  // SPA build (hash routing) — carga desde file://
+  const candidates = [
+    path.join(__dirname, "..", "dist-electron", "index.html"),
+    path.join(process.resourcesPath || "", "app", "dist-electron", "index.html"),
+    path.join(__dirname, "..", "dist", "client", "index.html"),
+  ];
+  const html = candidates.find((p) => fs.existsSync(p));
+  if (html) {
+    await mainWin.loadFile(html);
   } else {
-    // Fallback: intentar file://
-    const html = path.join(__dirname, "..", "dist", "client", "index.html");
-    if (fs.existsSync(html)) mainWin.loadFile(html);
-    else mainWin.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
-      "<h1 style='font-family:sans-serif;color:#e94'>No se encontró el build. Ejecuta bun run electron:pack:win.</h1>"
+    await mainWin.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
+      "<div style='font-family:system-ui;background:#0a0a1a;color:#fff;min-height:100vh;display:grid;place-items:center;padding:24px;text-align:center'><div><h1 style='color:#f87171'>Build no encontrado</h1><p>No se encontró <code>dist-electron/index.html</code>.</p></div></div>"
     ));
   }
+  // Log de errores de carga para diagnóstico
+  mainWin.webContents.on("did-fail-load", (_e, code, desc, url) => {
+    console.error("[renderer] did-fail-load", code, desc, url);
+  });
+  mainWin.webContents.on("render-process-gone", (_e, details) => {
+    console.error("[renderer] gone", details);
+  });
 }
 
 app.whenReady().then(async () => {
