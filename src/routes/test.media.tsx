@@ -252,8 +252,8 @@ function ConnectivityCard() {
   return (
     <Card title="Conectividad" desc="Estado de red y detección de dispositivos Bluetooth cercanos.">
       <div className="flex flex-wrap items-center gap-3">
-        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm ${online ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-          <span className={`h-2 w-2 rounded-full ${online ? "bg-green-500" : "bg-red-500"}`} />
+        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm ${online ? "bg-primary/15 text-primary ring-1 ring-inset ring-primary/30" : "bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30"}`}>
+          <span className={`h-2 w-2 rounded-full ${online ? "bg-primary" : "bg-destructive"}`} />
           WiFi / Datos: {online ? "Conectado" : "Sin conexión"}
         </span>
         <TestBtn onClick={scanBluetooth}>Buscar Bluetooth</TestBtn>
