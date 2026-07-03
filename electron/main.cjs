@@ -169,7 +169,51 @@ function registerIpc(getWin) {
 }
 
 let mainWin;
-function createWindow() {
+let ssrProc;
+
+function findFreePort() {
+  return new Promise((resolve) => {
+    const net = require("net");
+    const srv = net.createServer();
+    srv.listen(0, "127.0.0.1", () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
+async function startSsrServer() {
+  // Nitro node-server build: dist/server/index.mjs
+  const entry = path.join(__dirname, "..", "dist", "server", "index.mjs");
+  if (!fs.existsSync(entry)) return null;
+  const port = await findFreePort();
+  const nodeBin = process.execPath; // Electron ejecutable acepta ELECTRON_RUN_AS_NODE=1
+  const child = spawn(nodeBin, [entry], {
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ELECTRON_RUN_AS_NODE: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  child.stdout.on("data", (d) => console.log("[ssr]", String(d).trim()));
+  child.stderr.on("data", (d) => console.error("[ssr]", String(d).trim()));
+  ssrProc = child;
+  // esperar a que el puerto responda
+  await new Promise((resolve) => {
+    const net = require("net");
+    const started = Date.now();
+    const tryConnect = () => {
+      const s = net.connect(port, "127.0.0.1");
+      s.once("connect", () => { s.end(); resolve(); });
+      s.once("error", () => {
+        if (Date.now() - started > 8000) return resolve();
+        setTimeout(tryConnect, 120);
+      });
+    };
+    tryConnect();
+  });
+  return `http://127.0.0.1:${port}`;
+}
+
+async function createWindow() {
   mainWin = new BrowserWindow({
     width: 1360, height: 860, minWidth: 980, minHeight: 660,
     backgroundColor: "#0a0a1a", autoHideMenuBar: true,
@@ -178,14 +222,25 @@ function createWindow() {
   if (isDev && process.env.ELECTRON_START_URL) {
     mainWin.loadURL(process.env.ELECTRON_START_URL);
     mainWin.webContents.openDevTools({ mode: "detach" });
+    return;
+  }
+  const url = await startSsrServer();
+  if (url) {
+    mainWin.loadURL(url);
   } else {
-    mainWin.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    // Fallback: intentar file://
+    const html = path.join(__dirname, "..", "dist", "client", "index.html");
+    if (fs.existsSync(html)) mainWin.loadFile(html);
+    else mainWin.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
+      "<h1 style='font-family:sans-serif;color:#e94'>No se encontró el build. Ejecuta bun run electron:pack:win.</h1>"
+    ));
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerIpc(() => mainWin);
-  createWindow();
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  await createWindow();
+  app.on("activate", async () => { if (BrowserWindow.getAllWindows().length === 0) await createWindow(); });
 });
+
 app.on("window-all-closed", () => { syslogProcs.forEach((p) => { try { p.kill(); } catch {} }); if (process.platform !== "darwin") app.quit(); });
