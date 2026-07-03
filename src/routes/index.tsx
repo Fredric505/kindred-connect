@@ -157,6 +157,39 @@ function Index() {
         </ul>
       </section>
 
+      {/* Diagnóstico avanzado (USB) */}
+      <section className="mt-16 sm:mt-20">
+        <Link
+          to="/diagnostico"
+          className="group relative flex flex-col overflow-hidden rounded-3xl border border-primary/40 bg-linear-to-br from-primary/20 via-card/60 to-card/40 p-6 backdrop-blur transition-all hover:-translate-y-0.5 hover:border-primary/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:p-10"
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/30 blur-3xl transition-opacity group-hover:bg-primary/40"
+          />
+          <div className="flex items-center gap-3">
+            <span className="grid h-11 w-11 place-items-center rounded-2xl bg-primary/25 text-primary ring-1 ring-inset ring-primary/40">
+              <Usb className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <span className="rounded-full border border-primary/40 bg-primary/15 px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wider text-primary">
+              App de escritorio
+            </span>
+          </div>
+          <h3 className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
+            Diagnóstico avanzado por USB
+          </h3>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
+            Batería real, ciclos, salud, IMEI, almacenamiento y sensores — leídos directamente
+            del iPhone con el mismo protocolo que iTunes. Disponible en la versión .exe.
+          </p>
+          <span className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary">
+            Abrir diagnóstico
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden="true" />
+          </span>
+        </Link>
+      </section>
+
+
       {/* Info */}
       <section className="mt-16 overflow-hidden rounded-3xl border border-border bg-linear-to-br from-card/80 to-card/40 p-6 backdrop-blur sm:mt-20 sm:p-10">
         <h3 className="text-xl font-semibold tracking-tight sm:text-2xl">¿Cómo funciona?</h3>
