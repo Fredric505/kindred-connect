@@ -243,4 +243,9 @@ app.whenReady().then(async () => {
   app.on("activate", async () => { if (BrowserWindow.getAllWindows().length === 0) await createWindow(); });
 });
 
-app.on("window-all-closed", () => { syslogProcs.forEach((p) => { try { p.kill(); } catch {} }); if (process.platform !== "darwin") app.quit(); });
+app.on("window-all-closed", () => {
+  syslogProcs.forEach((p) => { try { p.kill(); } catch {} });
+  if (ssrProc) { try { ssrProc.kill(); } catch {} }
+  if (process.platform !== "darwin") app.quit();
+});
+
