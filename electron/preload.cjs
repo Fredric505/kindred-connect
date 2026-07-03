@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("iphoneBridge", {
   battery: (opts = {}) => ipcRenderer.invoke("imd:battery", opts),
   storage: (opts = {}) => ipcRenderer.invoke("imd:storage", opts),
   diagnostics: (opts = {}) => ipcRenderer.invoke("imd:diagnostics", opts),
+  pair: (opts = {}) => ipcRenderer.invoke("imd:pair", opts),
+  pairStatus: (opts = {}) => ipcRenderer.invoke("imd:pair-status", opts),
   historyAppend: (opts) => ipcRenderer.invoke("imd:history-append", opts),
   historyRead: (opts) => ipcRenderer.invoke("imd:history-read", opts),
   syslogStart: (opts = {}) => ipcRenderer.invoke("imd:syslog-start", opts),

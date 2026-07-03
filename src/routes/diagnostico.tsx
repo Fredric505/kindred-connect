@@ -18,6 +18,7 @@ import {
   Play,
   Pause,
   Trash2,
+  Link2,
 } from "lucide-react";
 import {
   LineChart,
@@ -86,6 +87,8 @@ function DiagnosticoPage() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [syslog, setSyslog] = useState<string[]>([]);
   const [syslogOn, setSyslogOn] = useState(false);
+  const [pairing, setPairing] = useState(false);
+  const [pairMsg, setPairMsg] = useState<string | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
@@ -123,7 +126,6 @@ function DiagnosticoPage() {
       setSnapshot(snap);
       setHistory(hist.ok ? (hist.entries ?? []) : []);
 
-      // Guardar snapshot en historial
       const totalCap = num(pick(snap.storage, "TotalDiskCapacity"));
       const freeCap = num(pick(snap.storage, "AmountDataAvailable", "TotalDataAvailable"));
       const usedPct = totalCap && freeCap ? Math.round(((totalCap - freeCap) / totalCap) * 100) : undefined;
@@ -142,6 +144,28 @@ function DiagnosticoPage() {
       setScanning(false);
     }
   }, [bridge]);
+
+  const pair = useCallback(async () => {
+    if (!bridge) return;
+    setPairing(true);
+    setPairMsg(null);
+    try {
+      const udid = snapshot?.udid;
+      const r = await bridge.pair(udid ? { udid } : {});
+      if (r.ok) {
+        setPairMsg("Emparejado correctamente. Reescaneando…");
+        setTimeout(() => refresh(), 800);
+      } else if (r.needsTrust) {
+        setPairMsg("Desbloquea el iPhone y toca 'Confiar' en el aviso. Luego pulsa 'Emparejar' otra vez.");
+      } else {
+        setPairMsg(r.error || r.message || "No pude emparejar. Verifica que el iPhone esté desbloqueado.");
+      }
+    } catch (e) {
+      setPairMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPairing(false);
+    }
+  }, [bridge, snapshot, refresh]);
 
   useEffect(() => {
     if (!bridge) return;
@@ -241,6 +265,15 @@ function DiagnosticoPage() {
         </div>
         {bridge && (
           <div className="flex flex-wrap gap-2">
+            <button
+              onClick={pair}
+              disabled={pairing}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-primary/50 bg-primary/10 px-5 py-2.5 text-sm font-medium text-primary backdrop-blur hover:bg-primary/20 disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              title="Confía el PC con el iPhone (Trust). Necesario para leer batería, IMEI, serie e identidad."
+            >
+              <Link2 className={`h-4 w-4 ${pairing ? "animate-pulse" : ""}`} aria-hidden="true" />
+              {pairing ? "Emparejando…" : "Emparejar (Trust)"}
+            </button>
             {snapshot && (
               <button
                 onClick={exportPdf}
@@ -261,6 +294,13 @@ function DiagnosticoPage() {
           </div>
         )}
       </div>
+
+      {bridge && pairMsg && (
+        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-primary/40 bg-primary/10 p-4 text-sm">
+          <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+          <p className="text-foreground/90">{pairMsg}</p>
+        </div>
+      )}
 
       {!bridge && <WebModeNotice />}
 
