@@ -1,0 +1,31 @@
+{
+  "appId": "com.fredric505.iphonediagnostics",
+  "productName": "iPhone Diagnostics",
+  "directories": {
+    "output": "release-installer",
+    "buildResources": "public"
+  },
+  "files": [
+    "electron/**/*",
+    "dist-electron/**/*",
+    "libimobiledevice/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    { "from": "libimobiledevice", "to": "libimobiledevice" }
+  ],
+  "win": {
+    "target": [{ "target": "nsis", "arch": ["x64"] }],
+    "icon": "public/icon-512.png",
+    "artifactName": "iPhoneDiagnostics-Setup-${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "iPhone Diagnostics",
+    "runAfterFinish": true
+  }
+}
