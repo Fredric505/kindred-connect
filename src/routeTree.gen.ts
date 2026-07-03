@@ -9,12 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as DiagnosticoRouteImport } from './routes/diagnostico'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TestSensorsRouteImport } from './routes/test.sensors'
 import { Route as TestMediaRouteImport } from './routes/test.media'
 import { Route as TestDisplayRouteImport } from './routes/test.display'
 import { Route as TestBatteryRouteImport } from './routes/test.battery'
 
+const DiagnosticoRoute = DiagnosticoRouteImport.update({
+  id: '/diagnostico',
+  path: '/diagnostico',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -43,6 +49,7 @@ const TestBatteryRoute = TestBatteryRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/diagnostico': typeof DiagnosticoRoute
   '/test/battery': typeof TestBatteryRoute
   '/test/display': typeof TestDisplayRoute
   '/test/media': typeof TestMediaRoute
@@ -50,6 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/diagnostico': typeof DiagnosticoRoute
   '/test/battery': typeof TestBatteryRoute
   '/test/display': typeof TestDisplayRoute
   '/test/media': typeof TestMediaRoute
@@ -58,6 +66,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/diagnostico': typeof DiagnosticoRoute
   '/test/battery': typeof TestBatteryRoute
   '/test/display': typeof TestDisplayRoute
   '/test/media': typeof TestMediaRoute
@@ -67,15 +76,23 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/diagnostico'
     | '/test/battery'
     | '/test/display'
     | '/test/media'
     | '/test/sensors'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/test/battery' | '/test/display' | '/test/media' | '/test/sensors'
+  to:
+    | '/'
+    | '/diagnostico'
+    | '/test/battery'
+    | '/test/display'
+    | '/test/media'
+    | '/test/sensors'
   id:
     | '__root__'
     | '/'
+    | '/diagnostico'
     | '/test/battery'
     | '/test/display'
     | '/test/media'
@@ -84,6 +101,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DiagnosticoRoute: typeof DiagnosticoRoute
   TestBatteryRoute: typeof TestBatteryRoute
   TestDisplayRoute: typeof TestDisplayRoute
   TestMediaRoute: typeof TestMediaRoute
@@ -92,6 +110,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/diagnostico': {
+      id: '/diagnostico'
+      path: '/diagnostico'
+      fullPath: '/diagnostico'
+      preLoaderRoute: typeof DiagnosticoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -132,6 +157,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DiagnosticoRoute: DiagnosticoRoute,
   TestBatteryRoute: TestBatteryRoute,
   TestDisplayRoute: TestDisplayRoute,
   TestMediaRoute: TestMediaRoute,

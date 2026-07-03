@@ -8,7 +8,9 @@ import {
   ShieldCheck,
   Zap,
   WifiOff,
+  Usb,
 } from "lucide-react";
+
 
 export const Route = createFileRoute("/")({
   component: Index,
