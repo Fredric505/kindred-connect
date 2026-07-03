@@ -9,6 +9,7 @@ import {
   Zap,
   WifiOff,
   Usb,
+  Download,
 } from "lucide-react";
 
 
@@ -187,6 +188,26 @@ function Index() {
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden="true" />
           </span>
         </Link>
+
+        {/* Descarga del código para compilar el .exe */}
+        <div className="mt-6 flex flex-col items-start gap-4 rounded-3xl border border-border bg-card/50 p-6 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-8">
+          <div className="min-w-0">
+            <h4 className="text-lg font-semibold tracking-tight">
+              Descarga el código fuente y genera el <code className="rounded bg-muted px-1.5 py-0.5 text-[13px]">.exe</code>
+            </h4>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              Requiere Node.js 20+ e iTunes/Apple Devices en Windows. Ejecuta <code className="rounded bg-muted px-1 text-[12px]">build-exe.bat</code> con doble clic — se compila solo en 3-5 min.
+            </p>
+          </div>
+          <a
+            href="/iphone-diagnostics-source.zip"
+            download
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-[14px] font-medium text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-[1.02] hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Descargar ZIP (4.4 MB)
+          </a>
+        </div>
       </section>
 
 
