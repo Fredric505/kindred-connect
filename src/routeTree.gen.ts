@@ -10,33 +10,84 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TestSensorsRouteImport } from './routes/test.sensors'
+import { Route as TestMediaRouteImport } from './routes/test.media'
+import { Route as TestDisplayRouteImport } from './routes/test.display'
+import { Route as TestBatteryRouteImport } from './routes/test.battery'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TestSensorsRoute = TestSensorsRouteImport.update({
+  id: '/test/sensors',
+  path: '/test/sensors',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TestMediaRoute = TestMediaRouteImport.update({
+  id: '/test/media',
+  path: '/test/media',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TestDisplayRoute = TestDisplayRouteImport.update({
+  id: '/test/display',
+  path: '/test/display',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TestBatteryRoute = TestBatteryRouteImport.update({
+  id: '/test/battery',
+  path: '/test/battery',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/test/battery': typeof TestBatteryRoute
+  '/test/display': typeof TestDisplayRoute
+  '/test/media': typeof TestMediaRoute
+  '/test/sensors': typeof TestSensorsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/test/battery': typeof TestBatteryRoute
+  '/test/display': typeof TestDisplayRoute
+  '/test/media': typeof TestMediaRoute
+  '/test/sensors': typeof TestSensorsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/test/battery': typeof TestBatteryRoute
+  '/test/display': typeof TestDisplayRoute
+  '/test/media': typeof TestMediaRoute
+  '/test/sensors': typeof TestSensorsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/test/battery'
+    | '/test/display'
+    | '/test/media'
+    | '/test/sensors'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/test/battery' | '/test/display' | '/test/media' | '/test/sensors'
+  id:
+    | '__root__'
+    | '/'
+    | '/test/battery'
+    | '/test/display'
+    | '/test/media'
+    | '/test/sensors'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  TestBatteryRoute: typeof TestBatteryRoute
+  TestDisplayRoute: typeof TestDisplayRoute
+  TestMediaRoute: typeof TestMediaRoute
+  TestSensorsRoute: typeof TestSensorsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,22 +99,44 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/test/sensors': {
+      id: '/test/sensors'
+      path: '/test/sensors'
+      fullPath: '/test/sensors'
+      preLoaderRoute: typeof TestSensorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/test/media': {
+      id: '/test/media'
+      path: '/test/media'
+      fullPath: '/test/media'
+      preLoaderRoute: typeof TestMediaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/test/display': {
+      id: '/test/display'
+      path: '/test/display'
+      fullPath: '/test/display'
+      preLoaderRoute: typeof TestDisplayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/test/battery': {
+      id: '/test/battery'
+      path: '/test/battery'
+      fullPath: '/test/battery'
+      preLoaderRoute: typeof TestBatteryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  TestBatteryRoute: TestBatteryRoute,
+  TestDisplayRoute: TestDisplayRoute,
+  TestMediaRoute: TestMediaRoute,
+  TestSensorsRoute: TestSensorsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
